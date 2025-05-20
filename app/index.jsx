@@ -1,0 +1,92 @@
+import React from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+
+export default function LoginScreen() {
+  const router = useRouter();
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.redTop} />
+
+      <Text style={styles.title}>ParkPeek's Guard Page</Text>
+
+      <TextInput
+        placeholder="Enter Username"
+        style={styles.input}
+      />
+      <TextInput
+        placeholder="Enter Password"
+        secureTextEntry
+        style={styles.input}
+      />
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => router.push('/drawer/home')} // Use this instead of navigation.navigate
+      >
+        <Text style={styles.buttonText}>LOGIN</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.linkText}>
+        No account? <Text style={styles.link}>Create one!</Text>
+      </Text>
+      <Text style={styles.linkText}>
+        Need help? <Text style={styles.link}>Contact Us</Text>
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    paddingTop: 300,
+    backgroundColor: '#fff',
+  },
+  redTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 200,
+    height: 200,
+    borderBottomRightRadius: 100,
+    backgroundColor: '#FF5E5E',
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 24,
+  },
+  input: {
+    width: '80%',
+    height: 45,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  button: {
+    backgroundColor: '#D80000',
+    width: '80%',
+    height: 45,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 6,
+    marginVertical: 10,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  linkText: {
+    marginTop: 4,
+    fontSize: 13,
+    color: '#444',
+  },
+  link: {
+    color: '#007AFF',
+  },
+});
