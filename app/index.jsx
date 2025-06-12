@@ -1,9 +1,33 @@
-import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleLogin = async () => {
+    if (!username || !password) {
+      Alert.alert('Error', 'Please fill in both fields');
+      return;
+    }
+
+    const email = `${username}@parkpeek.com`;
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      Alert.alert('Login Failed', 'Incorrect username or password');
+    } else {
+      Alert.alert('Success', 'Logged in successfully!');
+      router.push('/drawer/home'); // Replace with your actual home route
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -14,23 +38,21 @@ export default function LoginScreen() {
       <TextInput
         placeholder="Enter Username"
         style={styles.input}
+        value={username}
+        onChangeText={setUsername}
       />
       <TextInput
         placeholder="Enter Password"
         secureTextEntry
         style={styles.input}
+        value={password}
+        onChangeText={setPassword}
       />
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() => router.push('/drawer/home')} // Use this instead of navigation.navigate
-      >
+      <TouchableOpacity style={styles.button} onPress={handleLogin}>
         <Text style={styles.buttonText}>LOGIN</Text>
       </TouchableOpacity>
 
-      <Text style={styles.linkText}>
-        No account? <Text style={styles.link}>Create one!</Text>
-      </Text>
       <Text style={styles.linkText}>
         Need help? <Text style={styles.link}>Contact Us</Text>
       </Text>
