@@ -16,7 +16,7 @@ export default function Home() {
       {/* Rizal Card */}
       <View style={styles.card}>
         <Text style={styles.cardText}>Rizal Occupancy</Text>
-        <Text style={styles.cardText}>90/120</Text>
+        <Text style={styles.cardText}>0/50</Text>
 
         <TouchableOpacity
           style={styles.button}
@@ -36,7 +36,7 @@ export default function Home() {
       {/* Einstein Card */}
       <View style={styles.card}>
         <Text style={styles.cardText}>Einstein Occupancy</Text>
-        <Text style={styles.cardText}>31/45</Text>
+        <Text style={styles.cardText}>0/50</Text>
 
         <TouchableOpacity
           style={styles.button}
