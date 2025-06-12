@@ -1,57 +1,54 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useContext } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { DrawerActions, useNavigation } from '@react-navigation/native';
+import { ParkingContext } from '../../context/ParkingContext';
+
+const MAX_SLOTS = 50;
 
 export default function Home() {
   const router = useRouter();
-  const navigation = useNavigation();
+  const { slotCounts, loading } = useContext(ParkingContext);
+  const rizalCount = slotCounts.Rizal || 0;
+  const einsteinCount = slotCounts.Einstein || 0;
 
   return (
     <View style={styles.container}>
-      {/* Title and Subtitle */}
       <Text style={styles.header}>Hi, Guard!</Text>
       <Text style={styles.subheader}>Here's the list of occupied parking slots</Text>
 
-      {/* Rizal Card */}
-      <View style={styles.card}>
-        <Text style={styles.cardText}>Rizal Occupancy</Text>
-        <Text style={styles.cardText}>0/50</Text>
+      {loading ? (
+        <ActivityIndicator size="large" color="#D80000" style={{ marginVertical: 20 }} />
+      ) : (
+        <>
+          {['Rizal', 'Einstein'].map((location) => {
+            const count = slotCounts[location] || 0;
+            return (
+              <View style={styles.card} key={location}>
+                <Text style={styles.cardText}>{location} Occupancy</Text>
+                <Text style={styles.cardText}>{count}/{MAX_SLOTS}</Text>
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.push('/scanRizal')}
-        >
-          <Text style={styles.buttonText}>Scan In</Text>
-        </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={() => router.push(`/scan${location}`)}
+                  disabled={count >= MAX_SLOTS}
+                >
+                  <Text style={styles.buttonText}>Scan In</Text>
+                </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.push('/ScanOutRizal')}
-        >
-          <Text style={styles.buttonText}>Scan Out</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Einstein Card */}
-      <View style={styles.card}>
-        <Text style={styles.cardText}>Einstein Occupancy</Text>
-        <Text style={styles.cardText}>0/50</Text>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.push('/scanEinstein')}
-        >
-          <Text style={styles.buttonText}>Scan In</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.push('/ScanOutEinstein')}
-        >
-          <Text style={styles.buttonText}>Scan Out</Text>
-        </TouchableOpacity>
-      </View>
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={() => router.push(`/ScanOut${location}`)}
+                  disabled={count === 0}
+                >
+                  <Text style={styles.buttonText}>Scan Out</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </>
+      )}
     </View>
   );
 }
@@ -62,18 +59,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     paddingTop: 60,
-  },
-  backButton: {
-    position: 'absolute',
-    top: 40,
-    left: 20,
-    padding: 10,
-    zIndex: 10,
-  },
-  backButtonText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
   },
   header: {
     fontSize: 24,
