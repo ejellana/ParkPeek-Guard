@@ -40,7 +40,6 @@ function ScanEinsteinScreen() {
       parsed = JSON.parse(data);
     } catch {
       Alert.alert('Invalid QR code format');
-      console.error('❌ Invalid QR code format');
       setTimeout(() => (qrLock.current = false), 3000);
       return;
     }
@@ -49,7 +48,6 @@ function ScanEinsteinScreen() {
 
     if (!studentNumber || parkinglocname !== 'Einstein') {
       Alert.alert('Invalid QR code');
-      console.error('❌ No student number or incorrect parking location name');
       setTimeout(() => (qrLock.current = false), 3000);
       return;
     }
@@ -81,7 +79,6 @@ function ScanEinsteinScreen() {
 
       if (status?.is_parked) {
         Alert.alert('User already parked!');
-        console.warn('⚠️ User already parked in Einstein');
         qrLock.current = false;
         return;
       }
@@ -92,9 +89,7 @@ function ScanEinsteinScreen() {
           .update({ is_parked: true, updated_at: now })
           .eq('id', status.id);
 
-        if (updateError) {
-          console.error('❌ Update Error:', updateError.message);
-        } else {
+        if (!updateError) {
           console.log('✅ Successfully updated parking_status row');
         }
       } else {
@@ -106,9 +101,7 @@ function ScanEinsteinScreen() {
           updated_at: now,
         }]);
 
-        if (insertError) {
-          console.error('❌ Insert Error:', insertError.message);
-        } else {
+        if (!insertError) {
           console.log('✅ Successfully inserted new parking_status row');
         }
       }
@@ -120,9 +113,7 @@ function ScanEinsteinScreen() {
         time_in: now,
       }]);
 
-      if (timeError) {
-        console.error('❌ Insert parking_times Error:', timeError.message);
-      } else {
+      if (!timeError) {
         console.log('✅ Successfully inserted new row in parking_times');
       }
 
@@ -136,11 +127,9 @@ function ScanEinsteinScreen() {
       ]);
     } catch (err) {
       Alert.alert('Error', err.message || 'Something went wrong');
-      console.error('❌ General Error:', err.message);
       setTimeout(() => (qrLock.current = false), 3000);
     }
   }
-
 
   return (
     <View style={styles.container}>
