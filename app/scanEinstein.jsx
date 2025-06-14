@@ -40,13 +40,16 @@ function ScanEinsteinScreen() {
       parsed = JSON.parse(data);
     } catch {
       Alert.alert('Invalid QR code format');
+      console.error('❌ Invalid QR code format');
       setTimeout(() => (qrLock.current = false), 3000);
       return;
     }
 
     const { studentNumber, parkinglocname } = parsed;
+
     if (!studentNumber || parkinglocname !== 'Einstein') {
       Alert.alert('Invalid QR code');
+      console.error('❌ No student number or incorrect parking location name');
       setTimeout(() => (qrLock.current = false), 3000);
       return;
     }
@@ -58,7 +61,10 @@ function ScanEinsteinScreen() {
         .eq('student_number', studentNumber)
         .maybeSingle();
 
-      if (userError || !user) throw new Error('User not found');
+      if (userError || !user) {
+        throw new Error('User not found');
+      }
+
       const user_id = user.user_id;
       const now = new Date();
 
@@ -69,35 +75,56 @@ function ScanEinsteinScreen() {
         .eq('parkinglocname', 'Einstein')
         .maybeSingle();
 
-      if (statusError && statusError.code !== 'PGRST116') throw statusError;
+      if (statusError && statusError.code !== 'PGRST116') {
+        throw statusError;
+      }
 
       if (status?.is_parked) {
         Alert.alert('User already parked!');
+        console.warn('⚠️ User already parked in Einstein');
         qrLock.current = false;
         return;
       }
 
       if (status) {
-        await supabase
+        const { error: updateError } = await supabase
           .from('parking_status')
           .update({ is_parked: true, updated_at: now })
           .eq('id', status.id);
+
+        if (updateError) {
+          console.error('❌ Update Error:', updateError.message);
+        } else {
+          console.log('✅ Successfully updated parking_status row');
+        }
       } else {
-        await supabase.from('parking_status').insert([{
+        const { error: insertError } = await supabase.from('parking_status').insert([{
           user_id,
           student_number: studentNumber,
           parkinglocname: 'Einstein',
           is_parked: true,
           updated_at: now,
         }]);
+
+        if (insertError) {
+          console.error('❌ Insert Error:', insertError.message);
+        } else {
+          console.log('✅ Successfully inserted new parking_status row');
+        }
       }
 
-      await supabase.from('parking_times').insert([{
+      const { error: timeError } = await supabase.from('parking_times').insert([{
         user_id,
         student_number: studentNumber,
         parkinglocname: 'Einstein',
         time_in: now,
       }]);
+
+      if (timeError) {
+        console.error('❌ Insert parking_times Error:', timeError.message);
+      } else {
+        console.log('✅ Successfully inserted new row in parking_times');
+      }
 
       incrementCount('Einstein');
 
@@ -109,9 +136,11 @@ function ScanEinsteinScreen() {
       ]);
     } catch (err) {
       Alert.alert('Error', err.message || 'Something went wrong');
+      console.error('❌ General Error:', err.message);
       setTimeout(() => (qrLock.current = false), 3000);
     }
   }
+
 
   return (
     <View style={styles.container}>

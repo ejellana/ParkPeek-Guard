@@ -22,7 +22,10 @@ function ScanRizalScreen() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
         qrLock.current = false;
       }
       appState.current = nextAppState;
@@ -78,26 +81,44 @@ function ScanRizalScreen() {
       }
 
       if (status) {
-        await supabase
+        const { error: updateError } = await supabase
           .from('parking_status')
           .update({ is_parked: true, updated_at: now })
           .eq('id', status.id);
+
+        if (updateError) {
+          Alert.alert('Update Error', updateError.message);
+        } else {
+          console.log('✅ Successfully updated parking_status row');
+        }
       } else {
-        await supabase.from('parking_status').insert([{
+        const { error: insertError } = await supabase.from('parking_status').insert([{
           user_id,
           student_number: studentNumber,
           parkinglocname: 'Rizal',
           is_parked: true,
           updated_at: now,
         }]);
+
+        if (insertError) {
+          Alert.alert('Insert Error', insertError.message);
+        } else {
+          console.log('✅ Successfully inserted new parking_status row');
+        }
       }
 
-      await supabase.from('parking_times').insert([{
+      const { error: timeError } = await supabase.from('parking_times').insert([{
         user_id,
         student_number: studentNumber,
         parkinglocname: 'Rizal',
         time_in: now,
       }]);
+
+      if (timeError) {
+        Alert.alert('Time Log Error', timeError.message);
+      } else {
+        console.log('✅ Successfully inserted new row in parking_times');
+      }
 
       incrementCount('Rizal');
 
