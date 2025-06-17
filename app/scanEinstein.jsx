@@ -55,7 +55,8 @@ function ScanEinsteinScreen() {
 
     if (!student_number || parkinglocname !== 'Einstein' || !vehicle?.plate_number) {
       Alert.alert(
-        'Invalid QR code: Not for Einstein parking!',
+        'Error',
+        `QR code not for Einstein parking`
       );
       setTimeout(() => (qrLock.current = false), 3000);
       return;
@@ -98,8 +99,9 @@ function ScanEinsteinScreen() {
       }
 
       if (existingTransaction) {
+        console.log('User already parked at Einstein!');
         Alert.alert('User already parked at Einstein!');
-        qrLock.current = false;
+        setTimeout(() => (qrLock.current = false), 3000);
         return;
       }
 

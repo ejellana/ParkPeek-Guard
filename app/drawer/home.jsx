@@ -32,7 +32,7 @@ export default function Home() {
                 <TouchableOpacity
                   style={styles.button}
                   onPress={() => router.push(`/scan${location}`)}
-                  disabled={count >= MAX_SLOTS}
+                  disabled={count >= MAX_SLOTS} 
                 >
                   <Text style={styles.buttonText}>Scan In</Text>
                 </TouchableOpacity>
@@ -40,7 +40,6 @@ export default function Home() {
                 <TouchableOpacity
                   style={styles.button}
                   onPress={() => router.push(`/ScanOut${location}`)}
-                  disabled={count === 0}
                 >
                   <Text style={styles.buttonText}>Scan Out</Text>
                 </TouchableOpacity>

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Alert,
@@ -13,7 +13,7 @@ import { CameraView } from 'expo-camera';
 import { Stack, useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 
-export default function ScanOutRizal() {
+function ScanOutRizalScreen() {
   const qrLock = useRef(false);
   const appState = useRef(AppState.currentState);
   const router = useRouter();
@@ -29,78 +29,126 @@ export default function ScanOutRizal() {
       appState.current = nextAppState;
     });
 
-    return () => {
-      subscription.remove();
-    };
+    return () => subscription.remove();
   }, []);
 
+  const lockScanner = (duration = 3000) => {
+    setTimeout(() => {
+      qrLock.current = false;
+    }, duration);
+  };
+
   async function handleScan(data) {
+    if (qrLock.current) return;
+    qrLock.current = true;
+
     let parsed;
     try {
       parsed = JSON.parse(data);
+      console.log('Parsed QR code:', parsed);
     } catch {
-      Alert.alert('Invalid QR code data');
-      qrLock.current = false;
+      console.log('Failed to parse QR:', 'Invalid format');
+      Alert.alert('Error', 'Invalid QR code format');
+      lockScanner();
       return;
     }
 
-    const { user_id, student_number, parkinglocname } = parsed;
+    const { student_number, parkinglocname, vehicle } = parsed;
+    console.log('Validation checks:', {
+      student_number,
+      parkinglocname,
+      vehicle_plate_number: vehicle?.plate_number,
+    });
 
-    if (parkinglocname !== 'Rizal') {
-      Alert.alert('QR code is not for Rizal parking');
-      qrLock.current = false;
+    if (!student_number || parkinglocname !== 'Rizal' || !vehicle?.plate_number) {
+      console.log('Invalid QR Data:', { student_number, parkinglocname, vehicle });
+      Alert.alert(
+        'Error',
+        `QR code not for Einstein scan out`
+      );
+      lockScanner();
       return;
     }
 
     try {
-      // Check if user is currently parked
-      const { data: statusData, error: statusError } = await supabase
-        .from('parking_status')
-        .select('id, is_parked')
-        .eq('user_id', user_id)
-        .eq('parkinglocname', 'Rizal')
-        .single();
+      // Debug authentication
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('Authenticated user in ScanOutRizal:', user);
 
-      if (statusError) {
-        throw statusError;
+      // Fetch user_id and vehicle_id using RPC
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('get_user_and_vehicle_ids', {
+          student_number,
+          plate_number: vehicle.plate_number,
+        })
+        .maybeSingle();
+
+      console.log('RPC response:', { rpcData, rpcError });
+
+      if (rpcError || !rpcData) {
+        throw new Error('Profile or vehicle not found');
       }
 
-      if (!statusData || !statusData.is_parked) {
-        Alert.alert('User is not currently parked!');
-        qrLock.current = false;
+      const { user_id, vehicle_id } = rpcData;
+      console.log('Fetched user_id:', user_id, 'vehicle_id:', vehicle_id);
+
+      // Find active parking transaction
+      const { data: transaction, error: transactionError } = await supabase
+        .from('parking_transactions')
+        .select('id')
+        .eq('user_id', user_id)
+        .eq('vehicle_id', vehicle_id)
+        .eq('parking_slot_id', 2) // Rizal
+        .eq('status', 'active')
+        .is('time_out', null)
+        .order('time_in', { ascending: false })
+        .maybeSingle();
+
+      if (transactionError || !transaction) {
+        console.log('No active transaction found');
+        Alert.alert('Error', 'No active parking session found for this user at Rizal');
+        lockScanner();
         return;
       }
 
-      // Update parking_status to is_parked = false
-      const { error: updateError } = await supabase
-        .from('parking_status')
-        .update({ is_parked: false, updated_at: new Date() })
-        .eq('id', statusData.id);
+      console.log('Active transaction:', transaction);
 
-      if (updateError) throw updateError;
+      // Update transaction to clock out
+      const now = new Date();
+      const { data: updateData, error: updateError } = await supabase
+        .from('parking_transactions')
+        .update({
+          time_out: now.toISOString(),
+          status: 'completed',
+          updated_at: now.toISOString(),
+        })
+        .eq('id', transaction.id)
+        .select('id, time_out, status');
 
-      // Update parking_times with time_out for the latest session
-      // Assume the latest session is the one with null time_out
-      const { error: timeError } = await supabase
-        .from('parking_times')
-        .update({ time_out: new Date() })
-        .eq('user_id', user_id)
-        .eq('parkinglocname', 'Rizal')
-        .is('time_out', null)
-        .order('time_in', { ascending: false })
-        .limit(1);
+      console.log('Update response:', { updateData, updateError });
 
-      if (timeError) throw timeError;
+      if (updateError) {
+        console.log('Failed to update transaction:', updateError.message);
+        throw new Error(`Failed to clock out: ${updateError.message}`);
+      }
 
-      Alert.alert('Clocked Out Successfully! (Rizal)', `User: ${student_number}`, [
+      if (!updateData || updateData.length === 0) {
+        console.log('No rows updated');
+        throw new Error('Failed to update parking transaction: No rows affected');
+      }
+
+      console.log('✅ Successfully updated parking_transactions to completed:', updateData);
+
+      Alert.alert('Clocked Out Successfully!', `User: ${student_number}`, [
         {
           text: 'OK',
           onPress: () => router.push('/drawer/home'),
         },
       ]);
-    } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to clock out');
-      qrLock.current = false;
+    } catch (err) {
+      console.log('General Error:', err.message);
+      Alert.alert('Error', err.message || 'Something went wrong');
+      lockScanner();
     }
   }
 
@@ -108,39 +156,29 @@ export default function ScanOutRizal() {
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       {Platform.OS === 'android' && <StatusBar hidden />}
-
       <CameraView
         style={StyleSheet.absoluteFillObject}
         facing="back"
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr'],
-        }}
-        onBarcodeScanned={({ data }) => {
-          if (data && !qrLock.current) {
-            qrLock.current = true;
-            handleScan(data);
-          }
-        }}
+        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+        onBarcodeScanned={({ data }) => handleScan(data)}
       />
-
       <View style={styles.scanBox} />
-
       <TouchableOpacity
         style={styles.backButton}
         onPress={() => router.push('/drawer/home')}
       >
-        <Text style={styles.backButtonText}>{'Back'}</Text>
+        <Text style={styles.backButtonText}>Back</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-// styles remain unchanged
-
+export default ScanOutRizalScreen;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff',
   },
   scanBox: {
     position: 'absolute',
@@ -154,17 +192,17 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   backButton: {
-  position: 'absolute',
-  bottom: 50,
-  alignSelf: 'center',
-  backgroundColor: '#D80000',
-  paddingVertical: 10,
-  paddingHorizontal: 24,
-  borderRadius: 6,
-},
-backButtonText: {
-  color: '#fff',
-  fontWeight: 'bold',
-  fontSize: 16,
-},
+    position: 'absolute',
+    bottom: 50,
+    alignSelf: 'center',
+    backgroundColor: '#D80000',
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 6,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 });

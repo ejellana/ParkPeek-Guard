@@ -56,7 +56,8 @@ function ScanRizalScreen() {
 
     if (!student_number || parkinglocname !== 'Rizal' || !vehicle?.plate_number) {
       Alert.alert(
-        'Invalid QR code: Not for Rizal parking!',
+        'Error',
+        `QR code not for Rizal parking`
       );
       setTimeout(() => (qrLock.current = false), 3000);
       return;
@@ -102,8 +103,9 @@ function ScanRizalScreen() {
       }
 
       if (existingTransaction) {
+        console.log('User already parked at Rizal!');
         Alert.alert('User already parked at Rizal!');
-        qrLock.current = false;
+        setTimeout(() => (qrLock.current = false), 3000);
         return;
       }
 
