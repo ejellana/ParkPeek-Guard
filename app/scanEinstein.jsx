@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useContext } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Alert,
@@ -12,17 +12,18 @@ import {
 import { CameraView } from 'expo-camera';
 import { Stack, useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { ParkingProvider, ParkingContext } from '../context/ParkingContext';
 
 function ScanEinsteinScreen() {
   const qrLock = useRef(false);
   const appState = useRef(AppState.currentState);
   const router = useRouter();
-  const { incrementCount } = useContext(ParkingContext);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
         qrLock.current = false;
       }
       appState.current = nextAppState;
@@ -38,88 +39,87 @@ function ScanEinsteinScreen() {
     let parsed;
     try {
       parsed = JSON.parse(data);
+      console.log('Parsed QR code:', parsed);
     } catch {
       Alert.alert('Invalid QR code format');
       setTimeout(() => (qrLock.current = false), 3000);
       return;
     }
 
-    const { studentNumber, parkinglocname } = parsed;
+    const { student_number, parkinglocname, vehicle } = parsed;
+    console.log('Validation checks:', {
+      student_number,
+      parkinglocname,
+      vehicle_plate_number: vehicle?.plate_number,
+    });
 
-    if (!studentNumber || parkinglocname !== 'Einstein') {
-      Alert.alert('Invalid QR code');
+    if (!student_number || parkinglocname !== 'Einstein' || !vehicle?.plate_number) {
+      Alert.alert(
+        'Invalid QR code: Not for Einstein parking!',
+      );
       setTimeout(() => (qrLock.current = false), 3000);
       return;
     }
 
     try {
-      const { data: user, error: userError } = await supabase
-        .from('users')
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
         .select('user_id')
-        .eq('student_number', studentNumber)
+        .eq('student_number', student_number)
         .maybeSingle();
 
-      if (userError || !user) {
-        throw new Error('User not found');
-      }
+      if (profileError || !profile) throw new Error('Profile not found');
+      const user_id = profile.user_id;
+      console.log('Fetched user_id:', user_id);
 
-      const user_id = user.user_id;
+      const { data: vehicleData, error: vehicleError } = await supabase
+        .from('vehicles')
+        .select('id')
+        .eq('plate_number', vehicle.plate_number)
+        .eq('user_id', user_id)
+        .maybeSingle();
+
+      if (vehicleError || !vehicleData) throw new Error('Vehicle not found');
+      const vehicle_id = vehicleData.id;
+      console.log('Fetched vehicle_id:', vehicle_id);
+
       const now = new Date();
 
-      const { data: status, error: statusError } = await supabase
-        .from('parking_status')
-        .select('id, is_parked')
+      const { data: existingTransaction, error: transactionCheckError } = await supabase
+        .from('parking_transactions')
+        .select('id')
         .eq('user_id', user_id)
-        .eq('parkinglocname', 'Einstein')
+        .eq('parking_slot_id', 1) // Einstein's slot ID
+        .eq('status', 'active')
         .maybeSingle();
 
-      if (statusError && statusError.code !== 'PGRST116') {
-        throw statusError;
+      if (transactionCheckError && transactionCheckError.code !== 'PGRST116') {
+        throw new Error(`Transaction Check Error: ${transactionCheckError.message}`);
       }
 
-      if (status?.is_parked) {
-        Alert.alert('User already parked!');
+      if (existingTransaction) {
+        Alert.alert('User already parked at Einstein!');
         qrLock.current = false;
         return;
       }
 
-      if (status) {
-        const { error: updateError } = await supabase
-          .from('parking_status')
-          .update({ is_parked: true, updated_at: now })
-          .eq('id', status.id);
+      const { error: transactionError } = await supabase
+        .from('parking_transactions')
+        .insert([
+          {
+            user_id,
+            vehicle_id,
+            parking_slot_id: 1, // Hardcoded for Einstein
+            time_in: now.toISOString(),
+            status: 'active',
+            created_at: now.toISOString(),
+          },
+        ]);
 
-        if (!updateError) {
-          console.log('✅ Successfully updated parking_status row');
-        }
-      } else {
-        const { error: insertError } = await supabase.from('parking_status').insert([{
-          user_id,
-          student_number: studentNumber,
-          parkinglocname: 'Einstein',
-          is_parked: true,
-          updated_at: now,
-        }]);
+      if (transactionError) throw new Error(`Transaction Error: ${transactionError.message}`);
+      console.log('✅ Successfully inserted new row in parking_transactions');
 
-        if (!insertError) {
-          console.log('✅ Successfully inserted new parking_status row');
-        }
-      }
-
-      const { error: timeError } = await supabase.from('parking_times').insert([{
-        user_id,
-        student_number: studentNumber,
-        parkinglocname: 'Einstein',
-        time_in: now,
-      }]);
-
-      if (!timeError) {
-        console.log('✅ Successfully inserted new row in parking_times');
-      }
-
-      incrementCount('Einstein');
-
-      Alert.alert('Clocked In Successfully! (Einstein)', `User: ${studentNumber}`, [
+      Alert.alert('Clocked In Successfully! (Einstein)', `User: ${student_number}`, [
         {
           text: 'OK',
           onPress: () => router.push('/drawer/home'),
@@ -152,13 +152,7 @@ function ScanEinsteinScreen() {
   );
 }
 
-export default function ScanEinstein() {
-  return (
-    <ParkingProvider>
-      <ScanEinsteinScreen />
-    </ParkingProvider>
-  );
-}
+export default ScanEinsteinScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

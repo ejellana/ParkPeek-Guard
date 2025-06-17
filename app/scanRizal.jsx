@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useContext } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Alert,
@@ -12,13 +12,11 @@ import {
 import { CameraView } from 'expo-camera';
 import { Stack, useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { ParkingProvider, ParkingContext } from '../context/ParkingContext';
 
 function ScanRizalScreen() {
   const qrLock = useRef(false);
   const appState = useRef(AppState.currentState);
   const router = useRouter();
-  const { incrementCount } = useContext(ParkingContext);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -41,88 +39,92 @@ function ScanRizalScreen() {
     let parsed;
     try {
       parsed = JSON.parse(data);
+      console.log('Parsed QR code:', parsed); // Debug: Log the parsed QR code
     } catch {
       Alert.alert('Invalid QR code format');
       setTimeout(() => (qrLock.current = false), 3000);
       return;
     }
 
-    const { studentNumber, parkinglocname } = parsed;
-    if (!studentNumber || parkinglocname !== 'Rizal') {
-      Alert.alert('Invalid QR code');
+    const { student_number, parkinglocname, vehicle } = parsed;
+    // Debug: Log validation checks
+    console.log('Validation checks:', {
+      student_number,
+      parkinglocname,
+      vehicle_plate_number: vehicle?.plate_number,
+    });
+
+    if (!student_number || parkinglocname !== 'Rizal' || !vehicle?.plate_number) {
+      Alert.alert(
+        'Invalid QR code: Not for Rizal parking!',
+      );
       setTimeout(() => (qrLock.current = false), 3000);
       return;
     }
 
     try {
-      const { data: user, error: userError } = await supabase
-        .from('users')
+      // Fetch user_id from profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
         .select('user_id')
-        .eq('student_number', studentNumber)
+        .eq('student_number', student_number)
         .maybeSingle();
 
-      if (userError || !user) throw new Error('User not found');
-      const user_id = user.user_id;
+      if (profileError || !profile) throw new Error('Profile not found');
+      const user_id = profile.user_id;
+      console.log('Fetched user_id:', user_id); // Debug: Log user_id
+
+      // Fetch vehicle_id from vehicles table
+      const { data: vehicleData, error: vehicleError } = await supabase
+        .from('vehicles')
+        .select('id')
+        .eq('plate_number', vehicle.plate_number)
+        .eq('user_id', user_id) // Ensure vehicle belongs to the user
+        .maybeSingle();
+
+      if (vehicleError || !vehicleData) throw new Error('Vehicle not found');
+      const vehicle_id = vehicleData.id;
+      console.log('Fetched vehicle_id:', vehicle_id); // Debug: Log vehicle_id
+
       const now = new Date();
 
-      const { data: status, error: statusError } = await supabase
-        .from('parking_status')
-        .select('id, is_parked')
+      // Check if user already has an active parking transaction at Rizal
+      const { data: existingTransaction, error: transactionCheckError } = await supabase
+        .from('parking_transactions')
+        .select('id')
         .eq('user_id', user_id)
-        .eq('parkinglocname', 'Rizal')
+        .eq('parking_slot_id', 2)
+        .eq('status', 'active')
         .maybeSingle();
 
-      if (statusError && statusError.code !== 'PGRST116') throw statusError;
+      if (transactionCheckError && transactionCheckError.code !== 'PGRST116') {
+        throw new Error(`Transaction Check Error: ${transactionCheckError.message}`);
+      }
 
-      if (status?.is_parked) {
-        Alert.alert('User already parked!');
+      if (existingTransaction) {
+        Alert.alert('User already parked at Rizal!');
         qrLock.current = false;
         return;
       }
 
-      if (status) {
-        const { error: updateError } = await supabase
-          .from('parking_status')
-          .update({ is_parked: true, updated_at: now })
-          .eq('id', status.id);
+      // Insert into parking_transactions
+      const { error: transactionError } = await supabase
+        .from('parking_transactions')
+        .insert([
+          {
+            user_id,
+            vehicle_id,
+            parking_slot_id: 2, // Hardcoded for Rizal
+            time_in: now.toISOString(),
+            status: 'active',
+            created_at: now.toISOString(),
+          },
+        ]);
 
-        if (updateError) {
-          Alert.alert('Update Error', updateError.message);
-        } else {
-          console.log('✅ Successfully updated parking_status row');
-        }
-      } else {
-        const { error: insertError } = await supabase.from('parking_status').insert([{
-          user_id,
-          student_number: studentNumber,
-          parkinglocname: 'Rizal',
-          is_parked: true,
-          updated_at: now,
-        }]);
+      if (transactionError) throw new Error(`Transaction Error: ${transactionError.message}`);
+      console.log('✅ Successfully inserted new row in parking_transactions');
 
-        if (insertError) {
-          Alert.alert('Insert Error', insertError.message);
-        } else {
-          console.log('✅ Successfully inserted new parking_status row');
-        }
-      }
-
-      const { error: timeError } = await supabase.from('parking_times').insert([{
-        user_id,
-        student_number: studentNumber,
-        parkinglocname: 'Rizal',
-        time_in: now,
-      }]);
-
-      if (timeError) {
-        Alert.alert('Time Log Error', timeError.message);
-      } else {
-        console.log('✅ Successfully inserted new row in parking_times');
-      }
-
-      incrementCount('Rizal');
-
-      Alert.alert('Clocked In Successfully!', `User: ${studentNumber}`, [
+      Alert.alert('Clocked In Successfully!', `User: ${student_number}`, [
         {
           text: 'OK',
           onPress: () => router.push('/drawer/home'),
@@ -155,13 +157,7 @@ function ScanRizalScreen() {
   );
 }
 
-export default function ScanRizal() {
-  return (
-    <ParkingProvider>
-      <ScanRizalScreen />
-    </ParkingProvider>
-  );
-}
+export default ScanRizalScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
