@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useContext } from 'react';
 import {
   View,
   Alert,
@@ -12,11 +12,14 @@ import {
 import { CameraView } from 'expo-camera';
 import { Stack, useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { ParkingContext } from '../context/ParkingContext';
 
 function ScanEinsteinScreen() {
   const qrLock = useRef(false);
   const appState = useRef(AppState.currentState);
   const router = useRouter();
+  const { incrementCount } = useContext(ParkingContext);
+  console.log('ParkingContext in ScanEinsteinScreen:', { incrementCount });
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -32,6 +35,12 @@ function ScanEinsteinScreen() {
     return () => subscription.remove();
   }, []);
 
+  const lockScanner = (duration = 3000) => {
+    setTimeout(() => {
+      qrLock.current = false;
+    }, duration);
+  };
+
   async function handleScan(data) {
     if (qrLock.current) return;
     qrLock.current = true;
@@ -41,8 +50,9 @@ function ScanEinsteinScreen() {
       parsed = JSON.parse(data);
       console.log('Parsed QR code:', parsed);
     } catch {
-      Alert.alert('Invalid QR code format');
-      setTimeout(() => (qrLock.current = false), 3000);
+      console.log('Failed to parse QR:', 'Invalid format');
+      Alert.alert('Error', 'Invalid QR code format');
+      lockScanner();
       return;
     }
 
@@ -54,43 +64,53 @@ function ScanEinsteinScreen() {
     });
 
     if (!student_number || parkinglocname !== 'Einstein' || !vehicle?.plate_number) {
-      Alert.alert(
-        'Error',
-        `QR code not for Einstein parking`
-      );
-      setTimeout(() => (qrLock.current = false), 3000);
+      console.log('Invalid QR Data:', { student_number, parkinglocname, vehicle });
+      Alert.alert('Error', 'QR code not valid for Einstein parking');
+      lockScanner();
       return;
     }
 
     try {
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('user_id')
-        .eq('student_number', student_number)
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('Authenticated user in ScanEinstein:', user);
+
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('get_user_and_vehicle_ids', {
+          student_number,
+          plate_number: vehicle.plate_number,
+        })
         .maybeSingle();
 
-      if (profileError || !profile) throw new Error('Profile not found');
-      const user_id = profile.user_id;
-      console.log('Fetched user_id:', user_id);
+      console.log('RPC response:', { rpcData, rpcError });
 
-      const { data: vehicleData, error: vehicleError } = await supabase
-        .from('vehicles')
-        .select('id')
-        .eq('plate_number', vehicle.plate_number)
-        .eq('user_id', user_id)
-        .maybeSingle();
+      if (rpcError || !rpcData) {
+        throw new Error('Profile or vehicle not found');
+      }
 
-      if (vehicleError || !vehicleData) throw new Error('Vehicle not found');
-      const vehicle_id = vehicleData.id;
-      console.log('Fetched vehicle_id:', vehicle_id);
+      const { user_id, vehicle_id } = rpcData;
+      console.log('Fetched user_id:', user_id, 'vehicle_id:', vehicle_id);
 
-      const now = new Date();
+      // Check parking slot capacity
+      const { data: slotData, error: slotError } = await supabase
+        .from('parking_slots')
+        .select('current_occupancy, total_capacity')
+        .eq('id', 1) // Einstein
+        .single();
 
+      if (slotError || !slotData) {
+        throw new Error('Failed to fetch parking slot data');
+      }
+
+      if (slotData.current_occupancy >= slotData.total_capacity) {
+        throw new Error('Einstein parking is full');
+      }
+
+      // Check existing transaction
       const { data: existingTransaction, error: transactionCheckError } = await supabase
         .from('parking_transactions')
         .select('id')
         .eq('user_id', user_id)
-        .eq('parking_slot_id', 1) // Einstein's slot ID
+        .eq('parking_slot_id', 1)
         .eq('status', 'active')
         .maybeSingle();
 
@@ -99,37 +119,65 @@ function ScanEinsteinScreen() {
       }
 
       if (existingTransaction) {
-        console.log('User already parked at Einstein!');
-        Alert.alert('User already parked at Einstein!');
-        setTimeout(() => (qrLock.current = false), 3000);
-        return;
+        console.log('User already parked at Einstein');
+        throw new Error('User already parked at Einstein');
       }
 
-      const { error: transactionError } = await supabase
+      // Insert parking transaction
+      const now = new Date();
+      const { data: transactionData, error: transactionError } = await supabase
         .from('parking_transactions')
-        .insert([
-          {
-            user_id,
-            vehicle_id,
-            parking_slot_id: 1, // Hardcoded for Einstein
-            time_in: now.toISOString(),
-            status: 'active',
-            created_at: now.toISOString(),
-          },
-        ]);
+        .insert({
+          user_id,
+          vehicle_id,
+          parking_slot_id: 1, // Einstein
+          time_in: now.toISOString(),
+          status: 'active',
+          created_at: now.toISOString(),
+          updated_at: now.toISOString(),
+        })
+        .select('id')
+        .single();
 
-      if (transactionError) throw new Error(`Transaction Error: ${transactionError.message}`);
-      console.log('✅ Successfully inserted new row in parking_transactions');
+      if (transactionError || !transactionData) {
+        console.log('Failed to insert transaction:', transactionError?.message);
+        throw new Error('Failed to create parking session');
+      }
 
-      Alert.alert('Clocked In Successfully! (Einstein)', `User: ${student_number}`, [
+      console.log('Inserted transaction:', transactionData);
+
+      // Increment current_occupancy
+      const { data: updatedSlot, error: updateError } = await supabase
+        .from('parking_slots')
+        .update({ current_occupancy: slotData.current_occupancy + 1 })
+        .eq('id', 1)
+        .select('current_occupancy, total_capacity')
+        .single();
+
+      if (updateError || !updatedSlot) {
+        console.log('Failed to update parking slot:', updateError?.message);
+        throw new Error('Failed to update parking slot occupancy');
+      }
+
+      console.log('Updated parking slot:', updatedSlot);
+
+      // Update slotCounts
+      if (incrementCount) {
+        incrementCount('Einstein');
+      } else {
+        console.warn('incrementCount is undefined');
+      }
+
+      Alert.alert('Clocked In Successfully!', `User: ${student_number}`, [
         {
           text: 'OK',
-          onPress: () => router.push('/drawer/home'),
+          onPress: () => router.replace('/drawer/home'),
         },
       ]);
     } catch (err) {
+      console.log('General Error:', err.message);
       Alert.alert('Error', err.message || 'Something went wrong');
-      setTimeout(() => (qrLock.current = false), 3000);
+      lockScanner();
     }
   }
 
@@ -146,7 +194,7 @@ function ScanEinsteinScreen() {
       <View style={styles.scanBox} />
       <TouchableOpacity
         style={styles.backButton}
-        onPress={() => router.push('/drawer/home')}
+        onPress={() => router.replace('/drawer/home')}
       >
         <Text style={styles.backButtonText}>Back</Text>
       </TouchableOpacity>
@@ -157,7 +205,10 @@ function ScanEinsteinScreen() {
 export default ScanEinsteinScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
   scanBox: {
     position: 'absolute',
     top: '30%',

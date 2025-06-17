@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useContext } from 'react';
 import {
   View,
   Alert,
@@ -12,11 +12,14 @@ import {
 import { CameraView } from 'expo-camera';
 import { Stack, useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { ParkingContext } from '../context/ParkingContext';
 
 function ScanOutEinsteinScreen() {
   const qrLock = useRef(false);
   const appState = useRef(AppState.currentState);
   const router = useRouter();
+  const { decrementCount } = useContext(ParkingContext);
+  console.log('ParkingContext in ScanOutEinsteinScreen:', { decrementCount });
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -62,20 +65,15 @@ function ScanOutEinsteinScreen() {
 
     if (!student_number || parkinglocname !== 'Einstein' || !vehicle?.plate_number) {
       console.log('Invalid QR Data:', { student_number, parkinglocname, vehicle });
-      Alert.alert(
-        'Error',
-        `QR code not for Einstein scan out`
-      );
+      Alert.alert('Error', 'QR code not valid for Einstein scan out');
       lockScanner();
       return;
     }
 
     try {
-      // Debug authentication
       const { data: { user } } = await supabase.auth.getUser();
       console.log('Authenticated user in ScanOutEinstein:', user);
 
-      // Fetch user_id and vehicle_id using RPC
       const { data: rpcData, error: rpcError } = await supabase
         .rpc('get_user_and_vehicle_ids', {
           student_number,
@@ -105,13 +103,26 @@ function ScanOutEinsteinScreen() {
         .maybeSingle();
 
       if (transactionError || !transaction) {
-        console.log('No active transaction found');
-        Alert.alert('Error', 'No active parking session found for this user at Einstein');
-        lockScanner();
-        return;
+        console.log('No active transaction found:', transactionError?.message);
+        throw new Error('No active parking session found for this user at Einstein');
       }
 
       console.log('Active transaction:', transaction);
+
+      // Check current_occupancy
+      const { data: slotData, error: slotError } = await supabase
+        .from('parking_slots')
+        .select('current_occupancy')
+        .eq('id', 1) // Einstein
+        .single();
+
+      if (slotError || !slotData) {
+        throw new Error('Failed to fetch parking slot data');
+      }
+
+      if (slotData.current_occupancy <= 0) {
+        throw new Error('No occupied slots to decrement in Einstein');
+      }
 
       // Update transaction to clock out
       const now = new Date();
@@ -123,26 +134,42 @@ function ScanOutEinsteinScreen() {
           updated_at: now.toISOString(),
         })
         .eq('id', transaction.id)
-        .select('id, time_out, status');
+        .select('id, time_out, status')
+        .single();
 
-      console.log('Update response:', { updateData, updateError });
-
-      if (updateError) {
-        console.log('Failed to update transaction:', updateError.message);
-        throw new Error(`Failed to clock out: ${updateError.message}`);
+      if (updateError || !updateData) {
+        console.log('Failed to update transaction:', updateError?.message);
+        throw new Error('Failed to clock out');
       }
 
-      if (!updateData || updateData.length === 0) {
-        console.log('No rows updated');
-        throw new Error('Failed to update parking transaction: No rows affected');
+      console.log('Updated transaction:', updateData);
+
+      // Decrement current_occupancy
+      const { data: updatedSlot, error: slotUpdateError } = await supabase
+        .from('parking_slots')
+        .update({ current_occupancy: slotData.current_occupancy - 1 })
+        .eq('id', 1)
+        .select('current_occupancy, total_capacity')
+        .single();
+
+      if (slotUpdateError || !updatedSlot) {
+        console.log('Failed to decrement slot:', slotUpdateError?.message);
+        throw new Error('Failed to update parking slot occupancy');
       }
 
-      console.log('✅ Successfully updated parking_transactions to completed:', updateData);
+      console.log('Updated parking slot:', updatedSlot);
+
+      // Update slotCounts
+      if (decrementCount) {
+        decrementCount('Einstein');
+      } else {
+        console.warn('decrementCount is undefined');
+      }
 
       Alert.alert('Clocked Out Successfully!', `User: ${student_number}`, [
         {
           text: 'OK',
-          onPress: () => router.push('/drawer/home'),
+          onPress: () => router.replace('/drawer/home'),
         },
       ]);
     } catch (err) {
@@ -165,7 +192,7 @@ function ScanOutEinsteinScreen() {
       <View style={styles.scanBox} />
       <TouchableOpacity
         style={styles.backButton}
-        onPress={() => router.push('/drawer/home')}
+        onPress={() => router.replace('/drawer/home')}
       >
         <Text style={styles.backButtonText}>Back</Text>
       </TouchableOpacity>
