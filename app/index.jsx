@@ -9,25 +9,45 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
 
   const handleLogin = async () => {
-    if (!username || !password) {
-      Alert.alert('Error', 'Please fill in both fields');
+  if (!username || !password) {
+    Alert.alert('Error', 'Please fill in both fields');
+    return;
+  }
+
+  const email = `${username}@parkpeek.com`;
+
+  // Step 1: Sign in
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+    if (error || !data?.user) {
+      Alert.alert('Login Failed', 'Incorrect username or password');
       return;
     }
 
-    const email = `${username}@parkpeek.com`;
+    const user = data.user;
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    // Step 2: Check role
+    const { data: roleData, error: roleError } = await supabase
+      .from('roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .single();
 
-    if (error) {
-      Alert.alert('Login Failed', 'Incorrect username or password');
-    } else {
-      Alert.alert('Success', 'Logged in successfully!');
-      router.push('/drawer/home'); // Replace with your actual home route
+    if (roleError || !roleData || roleData.role !== 'guard') {
+      // Force sign out if role is invalid
+      await supabase.auth.signOut();
+      Alert.alert('Access Denied', 'Only guards are allowed to log in.');
+      return;
     }
+
+    // Step 3: Success
+    Alert.alert('Success', 'Logged in successfully!');
+    router.push('/drawer/home');
   };
+
 
   return (
     <View style={styles.container}>
@@ -53,9 +73,6 @@ export default function LoginScreen() {
         <Text style={styles.buttonText}>LOGIN</Text>
       </TouchableOpacity>
 
-      <Text style={styles.linkText}>
-        Need help? <Text style={styles.link}>Contact Us</Text>
-      </Text>
     </View>
   );
 }
