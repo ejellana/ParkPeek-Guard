@@ -14,14 +14,14 @@ export default function Home() {
   const { slotCounts } = context || {};
 
   // Fallback for slotCounts
-  const rizalSlots = slotCounts?.Rizal || { current: 0, total: 50 };
-  const einsteinSlots = slotCounts?.Einstein || { current: 0, total: 50 };
+  const rizalSlots = slotCounts?.Rizal || { current: 0, total: 100 };
+  const einsteinSlots = slotCounts?.Einstein || { current: 0, total: 100 };
 
-  const getProgress = (current, total) => (current / total) * 100;
+  const getProgress = (current, total) => (current / total) * 200;
   const getStatusColor = (current, total) => {
     const percentage = getProgress(current, total);
-    if (percentage >= 90) return '#e63946'; // Red for nearly full
-    if (percentage >= 50) return '#f4a261'; // Orange for half full
+    if (percentage >= 190) return '#e63946'; // Red for nearly full
+    if (percentage >= 100) return '#f4a261'; // Orange for half full
     return '#2a9d8f'; // Green for available
   };
 

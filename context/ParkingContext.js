@@ -5,8 +5,8 @@ export const ParkingContext = createContext();
 
 export const ParkingProvider = ({ children }) => {
   const [slotCounts, setSlotCounts] = useState({
-    Rizal: { current: 0, total: 50 },
-    Einstein: { current: 0, total: 50 },
+    Rizal: { current: 0, total: 100 },
+    Einstein: { current: 0, total: 100 },
   });
 
   useEffect(() => {
@@ -31,10 +31,10 @@ export const ParkingProvider = ({ children }) => {
             ...acc,
             [slot.location_name]: {
               current: slot.current_occupancy || 0,
-              total: slot.total_capacity || 50,
+              total: slot.total_capacity || 100,
             },
           }),
-          { Rizal: { current: 0, total: 50 }, Einstein: { current: 0, total: 50 } }
+          { Rizal: { current: 0, total: 100 }, Einstein: { current: 0, total: 100 } }
         );
         console.log('Fetched slot counts:', counts);
         setSlotCounts(counts);
