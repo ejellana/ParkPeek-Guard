@@ -11,19 +11,42 @@ export default function Home() {
   const router = useRouter();
   const context = useContext(ParkingContext);
   console.log('ParkingContext in Home:', context);
-  const { slotCounts } = context || {};
+  const { slotCounts, loading, error } = context || {};
 
-  // Fallback for slotCounts
   const rizalSlots = slotCounts?.Rizal || { current: 0, total: 100 };
   const einsteinSlots = slotCounts?.Einstein || { current: 0, total: 100 };
 
   const getProgress = (current, total) => (current / total) * 200;
   const getStatusColor = (current, total) => {
     const percentage = getProgress(current, total);
-    if (percentage >= 190) return '#e63946'; // Red for nearly full
-    if (percentage >= 100) return '#f4a261'; // Orange for half full
-    return '#2a9d8f'; // Green for available
+    if (percentage >= 190) return '#e63946';
+    if (percentage >= 100) return '#f4a261';
+    return '#2a9d8f';
   };
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.header}>Guard Dashboard</Text>
+        <Text style={styles.loadingText}>Loading parking data...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.header}>Guard Dashboard</Text>
+        <Text style={styles.errorText}>Error: {error}</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => context?.fetchSlotCounts?.()}
+        >
+          <Text style={styles.buttonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -140,6 +163,26 @@ const styles = StyleSheet.create({
     color: '#264653',
     textAlign: 'center',
     marginVertical: 54,
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#4B5563',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#e63946',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#D80000',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignSelf: 'center',
   },
   card: {
     backgroundColor: '#FFFFFF',
